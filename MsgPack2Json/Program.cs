@@ -6,6 +6,8 @@ using System.Text;
 using MessagePack;
 using MessagePack.Formatters;
 using Newtonsoft.Json;
+using System.Text.Json;
+
 
 namespace MsgPack2Yml;
 
@@ -13,40 +15,73 @@ internal class Program
 {
     private static void Main(string[] args)
     {
-        if (args.Length <= 2)
+        if (args.Length == 0)
         {
             Console.WriteLine("Invalid arguments.");
-            Console.WriteLine("MsgPack2Json json <input.msg> <output.json>");
-            Console.WriteLine("MsgPack2Json msg <input.json> <output.msg>");
+            Console.WriteLine("MsgPack2Json <msg/json files or directory containing files>");
             return;
         }
 
-        if (!File.Exists(args[1]))
-        {
-            Console.WriteLine("Input file does not exist.");
-            return;
-        }
 
-        switch (args[0])
+        if (Directory.Exists(args[0]))
         {
-            case "json":
+            foreach (var file in Directory.EnumerateFiles(args[0]))
             {
-                var bin = File.ReadAllBytes(args[1]);
-        
-                File.WriteAllText(args[2], MessagePackSerializer.ConvertToJson(bin));
-                break;
+                try
+                {
+                    ProcessFile(file);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to process '{file}': {ex.Message}");
+                }
             }
-            case "msg":
+        }
+        else
+        {
+            foreach (var arg in args)
             {
-                var json = File.ReadAllText(args[1]);
-        
-                File.WriteAllBytes(args[2], MessagePackSerializer.ConvertFromJson(json));
-                break;
+                try
+                {
+                    ProcessFile(arg);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Failed to process '{args[0]}': {ex.Message}");
+                }
             }
+        }
+    }
+
+    private static void ProcessFile(string file)
+    {
+        string ext = Path.GetExtension(file);
+        switch (ext)
+        {
+            case ".msg":
+                {
+                    var bin = File.ReadAllBytes(file);
+                    string json = MessagePackSerializer.ConvertToJson(bin);
+                    var jsonObject = JsonDocument.Parse(json);
+                    json = System.Text.Json.JsonSerializer.Serialize(jsonObject, new JsonSerializerOptions() 
+                    { 
+                        WriteIndented = true,
+                        Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+                    });
+
+                    File.WriteAllText(Path.ChangeExtension(file, ".json"), json);
+                    Console.WriteLine($"OK: {file} -> .msg");
+                    break;
+                }
+            case ".json":
+                {
+                    var json = File.ReadAllText(file);
+                    File.WriteAllBytes(Path.ChangeExtension(file, ".msg"), MessagePackSerializer.ConvertFromJson(json));
+                    Console.WriteLine($"OK: {file} -> .json");
+                    break;
+                }
             default:
-                Console.WriteLine("Invalid arguments.");
-                Console.WriteLine("MsgPack2Json json <input.msg> <output.json>");
-                Console.WriteLine("MsgPack2Json msg <input.json> <output.msg>");
+                Console.WriteLine($"ERROR: {file} not .msg or .json file");
                 return;
         }
     }
